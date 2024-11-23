@@ -122,8 +122,7 @@ Looking at `process_frame`, we see the other side of the process, where we creat
             "co_name": name,
             "qualname": qualname,
             "event": event,
-            "frame_id": self._frame_ids.get_or_default().borrow()
-                .get(&pyframe_id).cloned(),
+            "frame_id": self._frame_ids.get_or_default().borrow().get(&pyframe_id).cloned(),
             "arg": utils::dump_json(py, arg)?,
             "locals": json_locals,
             "thread": thread_name,
