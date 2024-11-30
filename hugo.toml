@@ -1,0 +1,4 @@
+baseURL = 'https://lilyfoote.github.io/'
+languageCode = 'en-gb'
+title = "Lily's Blog"
+theme = "PaperMod"

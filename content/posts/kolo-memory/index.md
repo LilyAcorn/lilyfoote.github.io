@@ -1,7 +1,10 @@
-Title: How we reduced the memory usage of our Rust extension by 4x
-Date: 2023-10-09
-Category: Rust
-Tags: kolo, rust, memory, json, msgpack, valgrind, heaptrack, pyo3
++++
+title = "How we reduced the memory usage of our Rust extension by 4x"
+date = 2023-10-09
+draft = false
+categories = ["Rust"]
+tags = ["kolo", "rust", "memory", "json", "msgpack", "valgrind", "heaptrack", "pyo3"]
++++
 
 This post was originally [published on the Kolo Blog](https://blog.kolo.app/optimising-rust-memory.html) and has been republished here with thanks to Wil Klopp.
 
@@ -80,7 +83,7 @@ $ sudo apt install heaptrack heaptrack-gui
 $ heaptrack python big_trace.py 25
 ```
 
-![The heaptrack GUI, showing three main sections. One is `_kolo::_kolo::profiler::KoloProfiler::save_in_db` using about 60% memory and the other two are both `_kolo::_kolo::profiler::KoloProfiler::process_frame` using 20% each.]({static}/images/heaptrack-start.png)
+![The heaptrack GUI, showing three main sections. One is `_kolo::_kolo::profiler::KoloProfiler::save_in_db` using about 60% memory and the other two are both `_kolo::_kolo::profiler::KoloProfiler::process_frame` using 20% each.](images/heaptrack-start.png)
 
 As can be seen, about 60% of the memory is being used in `_kolo::_kolo::profiler::KoloProfiler::save_in_db` and the other 40% in `_kolo::_kolo::profiler::KoloProfiler::process_frame`.
 
@@ -142,11 +145,11 @@ Having realised that we were spending a lot of memory storing `serde_json::Value
 
 By changing each usage of `serde_json::Value` to `ijson::IValue` and the `json!` macro to the `ijson!` macro, I was indeed able to cut the Rust memory usage in half. Before we were using 1.6GB (for `fibonacci(25)`):
 
-![heaptrack's Bottom-Up view showing 1.6GB memory usage.]({static}/images/heaptrack-bottom-up-before.png)
+![heaptrack's Bottom-Up view showing 1.6GB memory usage.](images/heaptrack-bottom-up-before.png)
 
 With `ijson`, we use 765MB:
 
-![heaptrack's Bottom-Up view showing 765MB memory usage.]({static}/images/heaptrack-bottom-up-ijson.png)
+![heaptrack's Bottom-Up view showing 765MB memory usage.](images/heaptrack-bottom-up-ijson.png)
 
 This was a really nice win! Unfortunately, our test suite failed when trying to serialize an arbitrary sized integer. Both Python's `json` and Rust's `serde_json` support this. In `serde_json`'s case this requires the `arbitrary_precision` feature), which [is incompatible with ijson](https://github.com/Diggsey/ijson/issues/20).
 
@@ -237,7 +240,7 @@ I also introduced the `SerializedFrame` enum allowing us to support both formats
 
 This worked, but we're still using a lot of memory:
 
-![heaptrack's Bottom-Up view showing over 1GB of memory usage in several sections.]({static}/images/heaptrack-bottom-up-msgpack-naive.png)
+![heaptrack's Bottom-Up view showing over 1GB of memory usage in several sections.](images/heaptrack-bottom-up-msgpack-naive.png)
 
 The call to `.clone()` when unpacking the `frames_of_interest` is suspicious:
 
@@ -317,7 +320,7 @@ pub fn load_py_msgpack(raw_data: &[u8]) -> Result<rmpv::ValueRef, PyErr> {
 
 Now we're storing the raw `msgpack` data in the `SerializedFrame::Msgpack` variant as a `Vec<u8>` and using `ValueRef` we save about 200MB, but we're doing a lot of encoding and decoding in `ValueRef`:
 
-![heaptrack's Bottom-Up view showing 683MB used to decode map data in `ValueRef` and 322MB in `write_value_ref`.]({static}/images/heaptrack-bottom-up-msgpack-valueref.png)
+![heaptrack's Bottom-Up view showing 683MB used to decode map data in `ValueRef` and 322MB in `write_value_ref`.](images/heaptrack-bottom-up-msgpack-valueref.png)
 
 ## The elephant in the room
 
@@ -361,7 +364,7 @@ We use the `write_` functions to add each part of the msgpack protocol to the bu
 
 With this refactor, memory usage has dropped under 400MB, `process_frame` has disappeared from the memory profile and peak memory usage now comes from the Python code saving the trace to sqlite3.
 
-![The heaptrack gui showing 373MB memory usage from Python and sqlite.]({static}/images/heaptrack-end.png)
+![The heaptrack gui showing 373MB memory usage from Python and sqlite.](images/heaptrack-end.png)
 
 ## Conclusions
 
