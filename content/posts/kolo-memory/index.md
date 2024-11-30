@@ -661,7 +661,7 @@ All of the approaches I've tried up to now have been encoding json or msgpack da
 To do this, I realised I should drop down to the lower level `rmp` crate, which allows writing data directly to a buffer:
 
 {{< narrow >}}
-```rust {hl_lines=["18-38"]}
+```rust {hl_lines=["13-33"]}
 fn save_in_db(&self, py: Python)
     -> Result<(), PyErr> {
   let mut state = self
@@ -671,11 +671,6 @@ fn save_in_db(&self, py: Python)
     std::mem::take(&mut *state);
   let data =
       if self.use_msgpack {
-    let trace_id = self
-      .trace_id
-      .lock()
-      .unwrap()
-      .clone();
     let mut buf: Vec<u8> =
       vec![];
 
@@ -720,12 +715,11 @@ fn save_in_db(&self, py: Python)
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust {hl_lines=["8-20"]}
+```rust {hl_lines=["7-19"]}
     fn save_in_db(&self, py: Python) -> Result<(), PyErr> {
         let mut state = self.frames_of_interest.lock().unwrap();
         let frames_of_interest = std::mem::take(&mut *state);
         let data = if self.use_msgpack {
-            let trace_id = self.trace_id.lock().unwrap().clone();
             let mut buf: Vec<u8> = vec![];
 
             rmp::encode::write_map_len(&mut buf, 1).unwrap();
