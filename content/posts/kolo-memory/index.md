@@ -184,7 +184,7 @@ As can be seen, about 60% of the memory is being used in `_kolo::_kolo::profiler
 Lets first look at a simplified version of `save_in_db`:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=["11-14"]}
 fn save_in_db(&self, py: Python)
     -> Result<(), PyErr> {
   // prepare other data to save
@@ -198,21 +198,22 @@ fn save_in_db(&self, py: Python)
   let data = json!({
     "frames_of_interest":
       frames_of_interest,
-  });
+  }).to_string();
+
   let db = PyModule::import(
     py, "kolo.db")?;
   let save = db.getattr(
     intern!(py,
      "save_invocation_in_sqlite"
     ))?;
-  save.call1((&self.db_path,
-    data.to_string()))?;
+  save.call1(
+    (&self.db_path, data))?;
   Ok(())
 }
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=["7-9"]}
     fn save_in_db(&self, py: Python) -> Result<(), PyErr> {
         // prepare other data to save
 
@@ -221,10 +222,11 @@ fn save_in_db(&self, py: Python)
 
         let data = json!({
             "frames_of_interest": frames_of_interest,
-        });
+        }).to_string();
+
         let db = PyModule::import(py, "kolo.db")?;
         let save = db.getattr(intern!(py, "save_invocation_in_sqlite"))?;
-        save.call1((&self.db_path, data.to_string()))?;
+        save.call1((&self.db_path, data))?;
         Ok(())
     }
 ```
@@ -247,26 +249,8 @@ fn process_frame(
   // various sources
 
   let frame_data = json!({
-    "path": path,
-    "co_name": name,
-    "qualname": qualname,
-    "event": event,
-    "frame_id": self._frame_ids
-      .get_or_default()
-      .borrow()
-      .get(&pyframe_id)
-      .cloned(),
-    "arg": utils::dump_json(
-      py, arg)?,
     "locals": json_locals,
-    "thread": thread_name,
-    "thread_native_id":
-      native_id,
-    "timestamp":
-      utils::timestamp(),
-    "type": "frame",
-    "user_code_call_site":
-      user_code_call_site,
+    // Snipped other values
   });
 
   self.push_frame_data(
@@ -336,7 +320,7 @@ Maybe it was time to try a different format. In particular, [msgpack](https://ms
 After implementing a proof of concept in the Python side of Kolo, it was time to see how it fared in Rust:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=[11, 12, "16-18", "28-36", "40-43", "63-70"]}
 fn save_in_db(&self, py: Python)
     -> Result<(), PyErr> {
   let mut state = self
@@ -384,15 +368,7 @@ fn save_in_db(&self, py: Python)
     // handle json
   };
 
-  let db = PyModule::import(
-    py, "kolo.db")?;
-  let save = db.getattr(
-    intern!(py,
-    "save_invocation_in_sqlite"
-  ))?;
-  save.call1(
-    (&self.db_path, data))?;
-  Ok(())
+  // Save data to sqlite
 }
 
 fn process_frame(
@@ -409,32 +385,9 @@ fn process_frame(
       if self.use_msgpack {
     let frame_data =
       rmpv::Value::Map(vec![
-        ("path".into(),
-          path.into()),
-        ("co_name".into(),
-          name.into()),
-        ("qualname".into(),
-          qualname),
-        ("event".into(),
-          event.into()),
-        ("frame_id".into(),
-          frame_id),
-        ("arg".into(), arg),
         ("locals".into(),
           locals),
-        ("thread".into(),
-          thread_name.into()),
-        ("thread_native_id"
-          .into(),
-          native_id.into()),
-        ("timestamp".into(),
-          utils::timestamp()
-          .into()),
-        ("type".into(),
-          "frame".into()),
-        ("user_code_call_site"
-          .into(),
-          user_code_call_site),
+        // Snipped other values
     ]);
     SerializedFrame::Msgpack(
       frame_data)
@@ -447,7 +400,7 @@ fn process_frame(
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=[6, 9, "16-18", "21-22", 43, 57]}
     fn save_in_db(&self, py: Python) -> Result<(), PyErr> {
         let mut state = self.frames_of_interest.lock().unwrap();
         let frames_of_interest = std::mem::take(&mut *state);
@@ -525,14 +478,14 @@ This worked, but we're still using a lot of memory:
 The call to `.clone()` when unpacking the `frames_of_interest` is suspicious:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=[6,7]}
 let frames_of_interest:
     Vec<rmpv::Value> =
   frames_of_interest
   .iter()
   .map(|s| match s {
     SerializedFrame::Msgpack(v)
-      => v.clone(),  // Sus!
+      => v.clone(),
     _ => {
       unreachable!(
         "frames_of_interest was
@@ -544,11 +497,11 @@ let frames_of_interest:
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=[4]}
             let frames_of_interest: Vec<rmpv::Value> = frames_of_interest
                 .iter()
                 .map(|s| match s {
-                    SerializedFrame::Msgpack(v) => v.clone(),  // Suspicious!
+                    SerializedFrame::Msgpack(v) => v.clone(),
                     _ => {
                         unreachable!("frames_of_interest was not all msgpack")
                     }
@@ -561,7 +514,7 @@ let frames_of_interest:
 We're taking each `rmpv::Value` from `frames_of_interest` and copying it! No wonder we're using so much memory. Let's try using `rmpv::ValueRef` instead. This works with a reference to the data, instead of owning the value:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=["1-2", "6-8", "15-16"]}
 let frames_of_interest:
     Vec<rmpv::ValueRef> =
   frames_of_interest
@@ -581,7 +534,7 @@ let frames_of_interest:
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=[1, 4, 9]}
             let frames_of_interest: Vec<rmpv::ValueRef> = frames_of_interest
                 .iter()
                 .map(|s| match s {
@@ -597,7 +550,7 @@ let frames_of_interest:
 To make this work we also update `process_frame` and add `load_py_msgpack`:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=[11, "18-22", 35, "40-43"]}
 fn process_frame(
   &self,
   frame: PyObject,
@@ -609,33 +562,9 @@ fn process_frame(
       if self.use_msgpack {
     let frame_data =
       rmpv::ValueRef::Map(vec![
-        ("path".into(),
-          path.as_ref()),
-        ("co_name".into(),
-          name.as_ref()),
-        ("qualname".into(),
-          qualname.as_ref()),
-        ("event".into(),
-          event.into()),
-        ("frame_id".into(),
-          frame_id.as_ref()),
-        ("arg".into(), arg),
         ("locals".into(),
           locals),
-        ("thread".into(),
-          thread_name.into()),
-        ("thread_native_id"
-          .into(),
-          native_id.into()),
-        ("timestamp".into(),
-          utils::timestamp()
-          .into()),
-        ("type".into(),
-          "frame".into()),
-        ("user_code_call_site"
-          .into(),
-          user_code_call_site
-          .as_ref()),
+        // Snipped other values
       ]);
     let mut buf: Vec<u8> =
       vec![];
@@ -675,7 +604,7 @@ pub fn load_py_msgpack(
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=[9, 24, 33, 35]}
     fn process_frame(
         &self,
         frame: PyObject,
@@ -732,7 +661,7 @@ All of the approaches I've tried up to now have been encoding json or msgpack da
 To do this, I realised I should drop down to the lower level `rmp` crate, which allows writing data directly to a buffer:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=["18-38"]}
 fn save_in_db(&self, py: Python)
     -> Result<(), PyErr> {
   let mut state = self
@@ -791,7 +720,7 @@ fn save_in_db(&self, py: Python)
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=["8-20"]}
     fn save_in_db(&self, py: Python) -> Result<(), PyErr> {
         let mut state = self.frames_of_interest.lock().unwrap();
         let frames_of_interest = std::mem::take(&mut *state);
