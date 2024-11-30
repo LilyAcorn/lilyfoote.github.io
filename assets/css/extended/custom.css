@@ -1,0 +1,9 @@
+@media (min-width: 640px) {
+    .narrow {
+        display: none;
+    }
+
+    .wide {
+        display: block;
+    }
+}
