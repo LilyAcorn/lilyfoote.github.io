@@ -1,4 +1,4 @@
-baseURL = 'https://lilyfoote.github.io/'
+baseURL = 'https://blog.lilyf.org/'
 languageCode = 'en-gb'
 title = "Lily's Blog"
 theme = "PaperMod"
