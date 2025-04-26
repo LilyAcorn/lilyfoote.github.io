@@ -40,7 +40,7 @@ This was caused by a bug in the regular expression Django uses to identify varia
 
 I reported this in [ticket #35816](https://code.djangoproject.com/ticket/35816) and [a fix has been merged to `main`](https://github.com/django/django/pull/19213).
 
-### The upper filter is not HTML-safe
+### The `upper` filter is not HTML-safe
 
 When implementing the `lower` filter, I noticed that it is marked as HTML-safe, so after the filter is applied no more HTML escaping is required. However, the `upper` filter is marked as HTML-unsafe, leading to any HTML content being escaped in the rendered template:
 
