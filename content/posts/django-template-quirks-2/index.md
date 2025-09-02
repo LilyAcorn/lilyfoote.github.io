@@ -30,3 +30,7 @@ It is possible to get more intuitive behaviour by using f-strings (or older form
 But this isn't available in the Django template language without defining a custom filter or moving the centring logic out of the template.
 
 Thanks to Moshe Nahmias for working on [implementing the `center` filter in Django Rusty Templates](https://github.com/LilyAcorn/django-rusty-templates/pull/91), and finding this quirk.
+
+### Update
+
+I [reported this as a bug](https://code.djangoproject.com/ticket/36519) and it will be [fixed from Django 6.0 onwards](https://github.com/django/django/commit/d4dd3e503c88db92f254769a64b2fcd4c572c7dc).
