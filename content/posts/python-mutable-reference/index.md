@@ -175,7 +175,7 @@ impl PyContext {
 And then we can create this in our `render` method:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=["13-16"]}
 struct CustomTag {
   func: Py<PyAny>,
   takes_context: bool,
@@ -191,8 +191,7 @@ impl Render for CustomTag {
       let py_context =
         PyContext { context };
       let content = self.func
-        .bind(py)
-        .call1((py_context,))?;
+        .call1(py, (py_context,))?;
       Ok(content.to_string())
     }
   }
@@ -200,7 +199,7 @@ impl Render for CustomTag {
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=["9-10"]}
 struct CustomTag {
     func: Py<PyAny>,
     takes_context: bool,
@@ -210,7 +209,7 @@ impl Render for CustomTag {
     fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
             let py_context = PyContext { context };
-            let content = self.func.bind(py).call1((py_context,))?;
+            let content = self.func.call1(py, (py_context,))?;
             Ok(content.to_string())
         }
     }
@@ -248,7 +247,7 @@ error[E0308]: mismatched types
 To make progress, we need to find a way to get an owned version of `context`. To do this, I turned to [`std::mem::take`](https://doc.rust-lang.org/std/mem/fn.take.html), which replaces the data pointed to by `&mut context` with an empty value (via [the `Default` trait](https://doc.rust-lang.org/std/default/trait.Default.html)) and returns an owned value:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=["1", "14-15"]}
 #[derive(Default)]
 pub struct Context {
   context: HashMap<
@@ -262,10 +261,11 @@ impl Render for CustomTag {
     context: &mut Context,
   ) -> RenderResult {
     if self.takes_context {
-      let context =
+      let swapped_context =
         std::mem::take(context);
-      let py_context =
-        PyContext { context };
+      let py_context = PyContext {
+          context: swapped_context
+      };
       let content = self.func
         .call1(py, (py_context,))?;
       Ok(content.to_string())
@@ -275,7 +275,7 @@ impl Render for CustomTag {
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=["1", "9"]}
 #[derive(Default)]
 pub struct Context {
   context: HashMap<String, Py<PyAny>>,
@@ -284,8 +284,8 @@ pub struct Context {
 impl Render for CustomTag {
     fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
-            let context = std::mem::take(context);
-            let py_context = PyContext { context };
+            let swapped_context = std::mem::take(context);
+            let py_context = PyContext { context: swapped_context };
             let content = self.func.call1(py, (py_context,))?;
             Ok(content.to_string())
         }
@@ -299,7 +299,7 @@ impl Render for CustomTag {
 This works very well for giving Python access to the `context`. However, once the custom tag's rendering logic has run we need to regain ownership of the `context` for use in other Rust tags. To do this, we turn to [`std::mem::replace`](https://doc.rust-lang.org/std/mem/fn.replace.html):
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=["15-17"]}
 impl Render for CustomTag {
   fn render(
     &self,
@@ -308,8 +308,7 @@ impl Render for CustomTag {
   ) -> RenderResult {
     if self.takes_context {
       let swapped_context =
-        std::mem::take(
-          swapped_context);
+        std::mem::take(context);
       let py_context = PyContext {
           context: swapped_context
       };
@@ -325,7 +324,7 @@ impl Render for CustomTag {
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=["7"]}
 impl Render for CustomTag {
     fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
@@ -387,7 +386,7 @@ error[E0382]: use of moved value: `py_context.context`
 To get around this, we can use an [`Arc` (atomic reference count)](https://doc.rust-lang.org/std/sync/struct.Arc.html) to send Python a clone of `py_context` rather than moving it out of scope. We can also remove the `context` from the `Arc` with [`Arc::try_unwrap`](https://doc.rust-lang.org/std/sync/struct.Arc.html#method.try_unwrap):
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=["2", "16", "20", "23-30"]}
 #[pyclass]
 #[derive(Clone)]
 struct PyContext {
@@ -402,13 +401,14 @@ impl Render for CustomTag {
   ) -> RenderResult {
     if self.takes_context {
       let swapped_context =
-        std::mem::take(
-          swapped_context).into();
+        std::mem::take(context)
+        .into();
       let py_context = PyContext {
         context: swapped_context
       };
+      let cloned = py_context.clone();
       let content = self.func.call1(
-        py, (py_context.clone(),)?;
+        py, (cloned,)?;
       let inner_context = match 
           Arc::try_unwrap(
             py_context.context) {
@@ -426,7 +426,7 @@ impl Render for CustomTag {
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=["2", "10", "12", "14-17"]}
 #[pyclass]
 #[derive(Clone)]
 struct PyContext {
@@ -436,9 +436,10 @@ struct PyContext {
 impl Render for CustomTag {
     fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
-            let swapped_context = std::mem::take(context);
+            let swapped_context = std::mem::take(context).into();
             let py_context = PyContext { context: swapped_context };
-            let content = self.func.call1(py, (py_context.clone(),))?;
+            let cloned = py_context.clone();
+            let content = self.func.call1(py, (cloned,))?;
             let inner_context = match Arc::try_unwrap(py_context.context) {
                 Ok(inner_context) => inner_context,
                 Err(_) => todo!(),
@@ -454,13 +455,7 @@ impl Render for CustomTag {
 This works great when Python doesn't keep a reference to the `PyContext` object. This means the reference count of the `Arc` is one and `Arc::try_unwrap` will succeed. If the custom tag implementation keeps a reference around for some reason, we cannot take ownership. Instead we must fall back to cloning the inner context:
 
 {{< narrow >}}
-```rust
-#[derive(Default)]
-pub struct Context {
-  context: HashMap<
-    String, Py<PyAny>>,
-}
-
+```rust {hl_lines=["2-15", "40-43"]}
 impl Context {
   fn clone_ref(
       &self, py: Python<'_>
@@ -491,8 +486,9 @@ impl Render for CustomTag {
       let py_context = PyContext {
         context: swapped_context
       };
+      let cloned = py_context.clone();
       let content = self.func.call1(
-        py, (py_context.clone(),)?;
+        py, (cloned,)?;
       let inner_context = match 
           Arc::try_unwrap(
             py_context.context) {
@@ -513,12 +509,7 @@ impl Render for CustomTag {
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
-#[derive(Default)]
-pub struct Context {
-    context: HashMap<String, Py<PyAny>>,
-}
-
+```rust {hl_lines=["2-10", "22"]}
 impl Context {
     fn clone_ref(&self, py: Python<'_>) -> Self {
         Self {
@@ -536,7 +527,8 @@ impl Render for CustomTag {
         if self.takes_context {
             let swapped_context = std::mem::take(context);
             let py_context = PyContext { context: swapped_context };
-            let content = self.func.call1(py, (py_context.clone(),))?;
+            let cloned = py_context.clone();
+            let content = self.func.call1(py, (cloned,))?;
             let inner_context = match Arc::try_unwrap(py_context.context) {
                 Ok(inner_context) => inner_context,
                 Err(inner_context) => inner_context.clone_ref(py),
@@ -556,7 +548,7 @@ Note that we need to use [the `clone_ref` method](https://docs.rs/pyo3/latest/py
 This is sufficient to grant Python read-only access to the `context`, but the `context` is designed to be mutated. To enable this, we need to protect the `context` from being mutably accessed from multiple threads. To do this, we can use a [`Mutex`](https://doc.rust-lang.org/std/sync/struct.Mutex.html), along with [PyO3's `MutexExt` trait](https://docs.rs/pyo3/latest/pyo3/sync/trait.MutexExt.html) which provides the `lock_py_attached` method to avoid deadlocking with the Python interpreter:
 
 {{< narrow >}}
-```rust
+```rust {hl_lines=["1", "6", "12-13", "28-31", "39-40", "43-46"]}
 use pyo3::sync::MutexExt;
 
 #[pyclass]
@@ -588,8 +580,9 @@ impl Render for CustomTag {
         PyContext::new(
           swapped_context
       );
+      let cloned = py_context.clone();
       let content = self.func.call1(
-        py, (py_context.clone(),)?;
+        py, (cloned,)?;
       let inner_context = match 
           Arc::try_unwrap(
             py_context.context) {
@@ -613,7 +606,7 @@ impl Render for CustomTag {
 ```
 {{< /narrow >}}
 {{< wide >}}
-```rust
+```rust {hl_lines=["1", "6", "12", "21", "26-28", "30-33"]}
 use pyo3::sync::MutexExt;
 
 #[pyclass]
@@ -622,15 +615,24 @@ struct PyContext {
     context: Arc<Mutex<Context>>,
 }
 
+impl PyContext {
+  fn new(context: Context) -> Self {
+    Self {
+      context: Arc::new(Mutex::new(context)),
+    }
+  }
+}
+
 impl Render for CustomTag {
     fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
             let swapped_context = std::mem::take(context);
             let py_context = PyContext { context: swapped_context };
-            let content = self.func.call1(py, (py_context.clone(),))?;
+            let cloned = py_context.clone();
+            let content = self.func.call1(py, (cloned,))?;
             let inner_context = match Arc::try_unwrap(py_context.context) {
                 Ok(inner_context) => inner_context
-                    .into_inner
+                    .into_inner()
                     .expect(
                         "Mutex should be unlocked because Arc refcount is one."),
                 Err(inner_context) => {
