@@ -135,11 +135,7 @@ trait Render {
 {{< wide >}}
 ```rust
 trait Render {
-    fn render(
-        &self,
-        py: Python<'_>,
-        context: &mut Context,
-    ) -> RenderResult;
+    fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult;
 }
 ```
 {{< /wide >}}
@@ -211,11 +207,7 @@ struct CustomTag {
 }
 
 impl Render for CustomTag {
-    fn render(
-        &self,
-        py: Python<'_>,
-        context: &mut Context,
-    ) -> RenderResult {
+    fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
             let py_context = PyContext { context };
             let content = self.func.bind(py).call1((py_context,))?;
@@ -290,11 +282,7 @@ pub struct Context {
 }
 
 impl Render for CustomTag {
-    fn render(
-        &self,
-        py: Python<'_>,
-        context: &mut Context,
-    ) -> RenderResult {
+    fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
             let context = std::mem::take(context);
             let py_context = PyContext { context };
@@ -339,11 +327,7 @@ impl Render for CustomTag {
 {{< wide >}}
 ```rust
 impl Render for CustomTag {
-    fn render(
-        &self,
-        py: Python<'_>,
-        context: &mut Context,
-    ) -> RenderResult {
+    fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
             let swapped_context = std::mem::take(context);
             let py_context = PyContext { context: swapped_context };
@@ -450,11 +434,7 @@ struct PyContext {
 }
 
 impl Render for CustomTag {
-    fn render(
-        &self,
-        py: Python<'_>,
-        context: &mut Context,
-    ) -> RenderResult {
+    fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
             let swapped_context = std::mem::take(context);
             let py_context = PyContext { context: swapped_context };
@@ -552,11 +532,7 @@ impl Context {
 }
 
 impl Render for CustomTag {
-    fn render(
-        &self,
-        py: Python<'_>,
-        context: &mut Context,
-    ) -> RenderResult {
+    fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
             let swapped_context = std::mem::take(context);
             let py_context = PyContext { context: swapped_context };
@@ -647,11 +623,7 @@ struct PyContext {
 }
 
 impl Render for CustomTag {
-    fn render(
-        &self,
-        py: Python<'_>,
-        context: &mut Context,
-    ) -> RenderResult {
+    fn render(&self, py: Python<'_>, context: &mut Context) -> RenderResult {
         if self.takes_context {
             let swapped_context = std::mem::take(context);
             let py_context = PyContext { context: swapped_context };
